@@ -1,0 +1,44 @@
+name:                http2-client-grpc-example
+version:             0.1.0.0
+-- synopsis:
+-- description:
+homepage:            https://github.com/lucasdicioccio/http2-client-grpc-example#readme
+license:             BSD3
+license-file:        LICENSE
+author:              Lucas DiCioccio
+maintainer:          lucas@dicioccio.fr
+copyright:           2017 (Lucas DiCioccio)
+category:            Network
+build-type:          Simple
+extra-source-files:  README.md
+cabal-version:       >=1.10
+
+library
+  hs-source-dirs:      src, gen
+  exposed-modules:     Lib
+                     , GRPC.Protos.Grpcbin
+                     , Proto.Protos.Grpcbin
+                     , Proto.Protos.Grpcbin'Fields
+  build-depends:       base >= 4.7 && < 5
+                     , async
+                     , bytestring
+                     , containers
+                     , data-default-class
+                     , http2
+                     , http2-client
+                     , http2-client-grpc
+                     , lens-family
+                     , lens-labels
+                     , proto-lens
+                     , proto-lens-protoc
+                     , text
+                     , tls
+  default-language:    Haskell2010
+
+executable http2-client-grpc-example-exe
+  hs-source-dirs:      app
+  main-is:             Main.hs
+  ghc-options:         -threaded -rtsopts -with-rtsopts=-N
+  build-depends:       base
+                     , http2-client-grpc-example
+  default-language:    Haskell2010
