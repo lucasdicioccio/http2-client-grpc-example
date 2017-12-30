@@ -90,7 +90,7 @@ runExample (Params{..}) = do
         _addCredit ifc 10000000
         _ <- _updateWindow ifc
         let unaryRpc :: RPC a => a -> Input a -> IO (Either TooMuchConcurrency (RawReply (Output a)))
-            unaryRpc x y = open client ifc ofc _authority [] (Timeout 100) x (singleRequest y)
+            unaryRpc x y = open client _authority [] (Timeout 100) x (singleRequest y)
         let handleReply _ x = print ("~~~"::String, fmap showMessage x)
 
         printDone "unary-rpc-index" =<< unaryRpc Grpcbin_Index (EmptyMessage def)
@@ -106,7 +106,6 @@ runExample (Params{..}) = do
 
         streamServerThread <- async $ do
             printDone "stream-server" =<< open client
-                 ifc ofc
                  _authority
                  []
                  (Timeout 1000)
@@ -116,7 +115,6 @@ runExample (Params{..}) = do
         streamClientChan <- newChan
         streamClientThread <- async $ do
             printDone "stream-client" =<< open client
-                 ifc ofc
                  _authority
                  []
                  (Timeout 1000)
@@ -127,7 +125,7 @@ runExample (Params{..}) = do
                      when (isRight v) $ print "pushing" 
                      return v)
 
-        replicateM_ 10 (writeChan streamClientChan (Right (def :: DummyMessage)))
+        replicateM_ 20 (writeChan streamClientChan (Right (def :: DummyMessage)))
         writeChan streamClientChan (Left StreamDone)
 
         wait streamServerThread
