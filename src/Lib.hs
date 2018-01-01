@@ -1,5 +1,13 @@
 {-# LANGUAGE OverloadedStrings #-}
-module Lib where
+{-# LANGUAGE RecordWildCards #-}
+module Lib (
+    runExample
+  , Params(..)
+  , UseTlsOrNot
+  , DebugOrNot
+  , HostName
+  , PortNumber
+  ) where
 
 import Control.Concurrent.Async (async, wait)
 import Control.Concurrent.Chan (newChan, writeChan, readChan)
@@ -13,12 +21,17 @@ import Data.ProtoLens.TextFormat (showMessage)
 import Network.GRPC
 import Network.HTTP2.Client
 import qualified Network.HTTP2 as HTTP2
+import qualified Network.TLS as TLS
+import qualified Network.TLS.Extra.Cipher as TLS
 
 import Proto.Protos.Grpcbin
 import GRPC.Protos.Grpcbin
 
 printDone :: Show a => String -> a -> IO ()
 printDone h v = print ("Done " ++ h ++ ": " ++ show v)
+
+type DebugOrNot = Bool
+type UseTlsOrNot = Bool
 
 wrapConn :: DebugOrNot -> (Http2FrameConnection -> Http2FrameConnection)
 wrapConn False conn = conn
@@ -43,21 +56,41 @@ wrapConn True conn = conn {
           }
     }
 
-type DebugOrNot = Bool
+tlsSettings :: UseTlsOrNot -> Maybe ClientParams
+tlsSettings False = Nothing
+tlsSettings True = Just $ TLS.ClientParams {
+          TLS.clientWantSessionResume    = Nothing
+        , TLS.clientUseMaxFragmentLength = Nothing
+        , TLS.clientServerIdentification = ("127.0.0.1", "")
+        , TLS.clientUseServerNameIndication = True
+        , TLS.clientShared               = def
+        , TLS.clientHooks                = def { TLS.onServerCertificate = \_ _ _ _ -> return []
+                                               }
+        , TLS.clientSupported            = def { TLS.supportedCiphers = TLS.ciphersuite_default }
+        , TLS.clientDebug                = def
+         }
 
-runExample :: DebugOrNot -> HostName -> PortNumber -> ByteString.ByteString -> IO ()
-runExample debugOrNot host port authority = do
+data Params = Params
+  { _debugOrNot :: DebugOrNot
+  , _tlsOrNot   :: UseTlsOrNot
+  , _host       :: HostName
+  , _port       :: PortNumber
+  , _authority  :: ByteString.ByteString
+  }
+
+runExample :: Params -> IO ()
+runExample (Params{..}) = do
     putStrLn "~~~connecting~~~"
-    conn <- newHttp2FrameConnection host port Nothing
+    conn <- newHttp2FrameConnection _host _port (tlsSettings _tlsOrNot)
     let goAwayHandler m = putStrLn "~~~goAway~~~" >> print m
-    runHttp2Client (wrapConn debugOrNot conn) 8192 8192 [] goAwayHandler ignoreFallbackHandler $ \client -> do
+    runHttp2Client (wrapConn _debugOrNot conn) 8192 8192 [] goAwayHandler ignoreFallbackHandler $ \client -> do
         putStrLn "~~~connected~~~"
         let ifc = _incomingFlowControl client
         let ofc = _outgoingFlowControl client
         _addCredit ifc 10000000
         _ <- _updateWindow ifc
         let unaryRpc :: RPC a => a -> Input a -> IO (Either TooMuchConcurrency (RawReply (Output a)))
-            unaryRpc x y = open client ifc ofc authority [] (Timeout 100) x (singleRequest y)
+            unaryRpc x y = open client ifc ofc _authority [] (Timeout 100) x (singleRequest y)
         let handleReply _ x = print ("~~~"::String, fmap showMessage x)
 
         printDone "unary-rpc-index" =<< unaryRpc Grpcbin_Index (EmptyMessage def)
@@ -74,7 +107,7 @@ runExample debugOrNot host port authority = do
         streamServerThread <- async $ do
             printDone "stream-server" =<< open client
                  ifc ofc
-                 authority
+                 _authority
                  []
                  (Timeout 1000)
                  Grpcbin_DummyServerStream
@@ -84,7 +117,7 @@ runExample debugOrNot host port authority = do
         streamClientThread <- async $ do
             printDone "stream-client" =<< open client
                  ifc ofc
-                 authority
+                 _authority
                  []
                  (Timeout 1000)
                  Grpcbin_DummyClientStream
