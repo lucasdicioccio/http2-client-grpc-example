@@ -3,6 +3,7 @@
 module Lib (
     runExample
   , Params(..)
+  , CompressOrNot
   , UseTlsOrNot
   , DebugOrNot
   , HostName
@@ -32,6 +33,7 @@ printDone h v = print ("Done " ++ h ++ ": " ++ show v)
 
 type DebugOrNot = Bool
 type UseTlsOrNot = Bool
+type CompressOrNot = Bool
 
 wrapConn :: DebugOrNot -> (Http2FrameConnection -> Http2FrameConnection)
 wrapConn False conn = conn
@@ -73,13 +75,15 @@ tlsSettings True = Just $ TLS.ClientParams {
 data Params = Params
   { _debugOrNot :: DebugOrNot
   , _tlsOrNot   :: UseTlsOrNot
+  , _gzipOrNot  :: CompressOrNot
   , _host       :: HostName
   , _port       :: PortNumber
   , _authority  :: ByteString.ByteString
-  }
+  } deriving Show
 
 runExample :: Params -> IO ()
-runExample (Params{..}) = do
+runExample params@(Params{..}) = do
+    let compress = if _gzipOrNot then gzip else uncompressed
     putStrLn "~~~connecting~~~"
     conn <- newHttp2FrameConnection _host _port (tlsSettings _tlsOrNot)
     let goAwayHandler m = putStrLn "~~~goAway~~~" >> print m
@@ -90,7 +94,7 @@ runExample (Params{..}) = do
         _addCredit ifc 10000000
         _ <- _updateWindow ifc
         let unaryRpc :: RPC a => a -> Input a -> IO (Either TooMuchConcurrency (RawReply (Output a)))
-            unaryRpc x y = open client _authority [] (Timeout 100) x (singleRequest y)
+            unaryRpc x y = open client _authority [] (Timeout 100) compress x (singleRequest compress y)
         let handleReply _ x = print ("~~~"::String, fmap showMessage x)
 
         printDone "unary-rpc-index" =<< unaryRpc Grpcbin_Index (EmptyMessage def)
@@ -109,8 +113,9 @@ runExample (Params{..}) = do
                  _authority
                  []
                  (Timeout 1000)
+                 compress
                  Grpcbin_DummyServerStream
-                 (streamReply def handleReply)
+                 (streamReply compress def handleReply)
 
         streamClientChan <- newChan
         streamClientThread <- async $ do
@@ -118,6 +123,7 @@ runExample (Params{..}) = do
                  _authority
                  []
                  (Timeout 1000)
+                 compress
                  Grpcbin_DummyClientStream
                  (streamRequest $ do
                      threadDelay 300000
@@ -125,7 +131,7 @@ runExample (Params{..}) = do
                      when (isRight v) $ print "pushing" 
                      return v)
 
-        replicateM_ 20 (writeChan streamClientChan (Right (def :: DummyMessage)))
+        replicateM_ 20 (writeChan streamClientChan (Right (def :: DummyMessage, compress)))
         writeChan streamClientChan (Left StreamDone)
 
         wait streamServerThread

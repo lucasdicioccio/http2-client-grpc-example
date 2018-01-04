@@ -43,7 +43,7 @@ packages:
   extra-dep: true
 - location:
     git: https://github.com/lucasdicioccio/http2-client-grpc.git
-    commit: bb8974bf1915d595e4d6e5a9ba67130ef22026c3
+    commit: c514ec6be8cfc3609d226999e1dc14ee64ad0c35
   extra-dep: true
 - location:
     git: https://github.com/lucasdicioccio/proto-lens.git

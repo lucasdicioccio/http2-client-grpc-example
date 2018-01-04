@@ -12,6 +12,7 @@ data Args = Args {
   , _argport    :: !PortNumber
   , _arguseTLS  :: !UseTlsOrNot
   , _argverbose :: !DebugOrNot
+  , _arggzip    :: !CompressOrNot
   }
 
 args :: Parser Args
@@ -20,16 +21,19 @@ args = Args
   <*> port
   <*> useTLS
   <*> verbose
+  <*> gzip
   where
      host = strOption (long "host" <> value "grpcb.in")
      port = option auto (long "port" <> value 9001)
      useTLS = flag True False (long "plain-text")
      verbose = flag False True (long "verbose")
+     gzip = flag False True (long "gzip")
 
 args2params :: Args -> Params
 args2params args = Params
   (_argverbose args)
   (_arguseTLS args)
+  (_arggzip args)
   (_arghost args)
   (_argport args)
   (ByteString.pack $ _arghost args <> ":" <> show (_argport args))
