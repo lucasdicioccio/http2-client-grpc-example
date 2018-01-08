@@ -58,12 +58,12 @@ wrapConn True conn = conn {
           }
     }
 
-tlsSettings :: UseTlsOrNot -> Maybe ClientParams
-tlsSettings False = Nothing
-tlsSettings True = Just $ TLS.ClientParams {
+tlsSettings :: UseTlsOrNot -> HostName -> PortNumber -> Maybe ClientParams
+tlsSettings False _ _ = Nothing
+tlsSettings True host port = Just $ TLS.ClientParams {
           TLS.clientWantSessionResume    = Nothing
         , TLS.clientUseMaxFragmentLength = Nothing
-        , TLS.clientServerIdentification = ("127.0.0.1", "")
+        , TLS.clientServerIdentification = (host, ByteString.pack $ show port)
         , TLS.clientUseServerNameIndication = True
         , TLS.clientShared               = def
         , TLS.clientHooks                = def { TLS.onServerCertificate = \_ _ _ _ -> return []
@@ -85,7 +85,7 @@ runExample :: Params -> IO ()
 runExample params@(Params{..}) = do
     let compress = if _gzipOrNot then gzip else uncompressed
     putStrLn "~~~connecting~~~"
-    conn <- newHttp2FrameConnection _host _port (tlsSettings _tlsOrNot)
+    conn <- newHttp2FrameConnection _host _port (tlsSettings _tlsOrNot _host _port)
     let goAwayHandler m = putStrLn "~~~goAway~~~" >> print m
     runHttp2Client (wrapConn _debugOrNot conn) 8192 8192 [] goAwayHandler ignoreFallbackHandler $ \client -> do
         putStrLn "~~~connected~~~"
