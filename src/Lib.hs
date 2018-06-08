@@ -1,5 +1,6 @@
+{-# LANGUAGE DataKinds         #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE RecordWildCards   #-}
 module Lib (
     runExample
   , Params(..)
@@ -19,6 +20,8 @@ import Data.Default.Class (def)
 import Data.Either (isRight)
 import Data.ProtoLens.TextFormat (showMessage)
 
+import Data.ProtoLens.Service.Types (Service(..), HasMethod, HasMethodImpl(..))
+
 import Network.GRPC
 import Network.HTTP2.Client
 import qualified Network.HTTP2 as HTTP2
@@ -26,7 +29,6 @@ import qualified Network.TLS as TLS
 import qualified Network.TLS.Extra.Cipher as TLS
 
 import Proto.Protos.Grpcbin
-import GRPC.Protos.Grpcbin
 
 printDone :: Show a => String -> a -> IO ()
 printDone h v = print ("Done " ++ h ++ ": " ++ show v)
@@ -93,39 +95,39 @@ runExample params@(Params{..}) = do
         let ofc = _outgoingFlowControl client
         _addCredit ifc 10000000
         _ <- _updateWindow ifc
-        let unaryRpc :: RPC a => a -> Input a -> IO (Either TooMuchConcurrency (RawReply (Output a)))
-            unaryRpc x y = open client _authority [] (Timeout 100) compress x (singleRequest compress y)
-        let handleReply _ x = print ("~~~"::String, fmap showMessage x)
 
-        printDone "unary-rpc-index" =<< unaryRpc Grpcbin_Index (EmptyMessage def)
+        let unaryRPC :: (Service s, HasMethod s m)
+                     => RPC s m
+                     -> MethodInput s m
+                     -> IO (Either TooMuchConcurrency (RawReply (MethodOutput s m)))
+            unaryRPC x y = open x client _authority [] (Timeout 100) compress (singleRequest x compress y)
 
-        printDone "unary-rpc-empty" =<< unaryRpc Grpcbin_Empty (EmptyMessage def)
-
-        printDone "unary-rpc-err-0" =<< unaryRpc Grpcbin_SpecificError (SpecificErrorRequest 0 "kikoo" def)
-        printDone "unary-rpc-err-1" =<< unaryRpc Grpcbin_SpecificError (SpecificErrorRequest 1 "kikoo" def)
-        printDone "unary-rpc-err-2" =<< unaryRpc Grpcbin_SpecificError (SpecificErrorRequest 2 "kikoo" def)
+        printDone "unary-rpc-index" =<< unaryRPC (RPC :: RPC GRPCBin "index") (EmptyMessage def)
+        printDone "unary-rpc-index" =<< unaryRPC (RPC :: RPC GRPCBin "empty") (EmptyMessage def)
+        printDone "unary-rpc-err-0" =<< unaryRPC (RPC :: RPC GRPCBin "specificError") (SpecificErrorRequest 0 "kikoo" def)
+        printDone "unary-rpc-err-1" =<< unaryRPC (RPC :: RPC GRPCBin "specificError") (SpecificErrorRequest 1 "kikoo" def)
+        printDone "unary-rpc-err-1" =<< unaryRPC (RPC :: RPC GRPCBin "specificError") (SpecificErrorRequest 1 "kikoo" def)
 
         replicateM_ 50 $ do
-            printDone "unary-rpc-err-random" =<< unaryRpc Grpcbin_RandomError (EmptyMessage def)
+            printDone "unary-rpc-err-random" =<< unaryRPC (RPC :: RPC GRPCBin "randomError") (EmptyMessage def)
 
+        let handleReply _ x = print ("~~~"::String, fmap showMessage x)
         streamServerThread <- async $ do
-            printDone "stream-server" =<< open client
+            printDone "stream-server" =<< open (RPC :: RPC GRPCBin "dummyServerStream") client
                  _authority
                  []
                  (Timeout 1000)
                  compress
-                 Grpcbin_DummyServerStream
-                 (streamReply compress def handleReply)
+                 (streamReply (RPC :: RPC GRPCBin "dummyServerStream") compress def handleReply)
 
         streamClientChan <- newChan
         streamClientThread <- async $ do
-            printDone "stream-client" =<< open client
+            printDone "stream-client" =<< open (RPC :: RPC GRPCBin "dummyClientStream") client
                  _authority
                  []
                  (Timeout 1000)
                  compress
-                 Grpcbin_DummyClientStream
-                 (streamRequest $ do
+                 (streamRequest (RPC :: RPC GRPCBin "dummyClientStream") $ do
                      threadDelay 300000
                      v <- readChan streamClientChan
                      when (isRight v) $ print "pushing" 
