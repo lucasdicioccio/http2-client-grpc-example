@@ -22,7 +22,7 @@ import Data.ProtoLens.TextFormat (showMessage)
 
 import Data.ProtoLens.Service.Types (Service(..), HasMethod, HasMethodImpl(..))
 
-import Network.GRPC
+import Network.GRPC.Client
 import Network.HTTP2.Client
 import qualified Network.HTTP2 as HTTP2
 import qualified Network.TLS as TLS
@@ -131,9 +131,9 @@ runExample params@(Params{..}) = do
                      threadDelay 300000
                      v <- readChan streamClientChan
                      when (isRight v) $ print "pushing" 
-                     return v)
+                     return (compress, v))
 
-        replicateM_ 20 (writeChan streamClientChan (Right (def :: DummyMessage, compress)))
+        replicateM_ 20 (writeChan streamClientChan (Right (def :: DummyMessage)))
         writeChan streamClientChan (Left StreamDone)
 
         wait streamServerThread
