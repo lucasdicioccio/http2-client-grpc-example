@@ -25,7 +25,7 @@ library
                      , data-default-class
                      , http2
                      , http2-client
-                     , http2-client-grpc
+                     , http2-client-grpc >= 0.2.0.1
                      , proto-lens
                      , proto-lens-protoc
                      , tls
