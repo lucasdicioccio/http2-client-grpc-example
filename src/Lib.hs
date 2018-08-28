@@ -111,30 +111,30 @@ runExample params@(Params{..}) = do
         replicateM_ 50 $ do
             printDone "unary-rpc-err-random" =<< unaryRPC (RPC :: RPC GRPCBin "randomError") (EmptyMessage def)
 
-        let handleReply _ x = print ("~~~"::String, fmap showMessage x)
+        let handleReply n _ x = print ("~~~"::String, n, showMessage x) >> pure (1+n)
         streamServerThread <- async $ do
             printDone "stream-server" =<< open (RPC :: RPC GRPCBin "dummyServerStream") client
                  _authority
                  []
                  (Timeout 1000)
                  compress
-                 (streamReply (RPC :: RPC GRPCBin "dummyServerStream") compress def handleReply)
+                 (streamReply (RPC :: RPC GRPCBin "dummyServerStream") compress (0::Int) def handleReply)
 
-        streamClientChan <- newChan
         streamClientThread <- async $ do
             printDone "stream-client" =<< open (RPC :: RPC GRPCBin "dummyClientStream") client
                  _authority
                  []
                  (Timeout 1000)
                  compress
-                 (streamRequest (RPC :: RPC GRPCBin "dummyClientStream") $ do
+                 (streamRequest (RPC :: RPC GRPCBin "dummyClientStream") (10::Int) $ \n -> do
                      threadDelay 300000
-                     v <- readChan streamClientChan
-                     when (isRight v) $ print "pushing" 
-                     return (compress, v))
-
-        replicateM_ 20 (writeChan streamClientChan (Right (def :: DummyMessage)))
-        writeChan streamClientChan (Left StreamDone)
+                     if n > 0
+                     then do
+                         print ("pushing" , n)
+                         return (compress, n - 1, Right def)
+                     else do
+                         print ("stop pushing" , n)
+                         return (compress, n, Left StreamDone))
 
         wait streamServerThread
         wait streamClientThread
