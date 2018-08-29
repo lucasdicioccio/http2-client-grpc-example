@@ -1,6 +1,12 @@
 # http2-client-grpc-example
 
-This is an example gRPC client for `http2-client-grpc`.
+This is an example gRPC client for `http2-client-grpc` using the low-level
+internals for when fine-tuning is required.
+
+An higher-level method, not-demonstrated in this example, is to use the
+Network.GRPC.Client.Helpers module (which still needs a bit of improvement, for
+instance, the Helper module does not automatically update connection-level flow
+control).
 
 ## Run it
 
