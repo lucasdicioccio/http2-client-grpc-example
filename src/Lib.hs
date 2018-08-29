@@ -23,6 +23,8 @@ import Data.ProtoLens.TextFormat (showMessage)
 import Data.ProtoLens.Service.Types (Service(..), HasMethod, HasMethodImpl(..))
 
 import Network.GRPC.Client
+import Network.GRPC.Client.Helpers
+import Network.GRPC.HTTP2.Encoding
 import Network.HTTP2.Client
 import qualified Network.HTTP2 as HTTP2
 import qualified Network.TLS as TLS
@@ -34,7 +36,6 @@ printDone :: Show a => String -> a -> IO ()
 printDone h v = print ("Done " ++ h ++ ": " ++ show v)
 
 type DebugOrNot = Bool
-type UseTlsOrNot = Bool
 type CompressOrNot = Bool
 
 wrapConn :: DebugOrNot -> (Http2FrameConnection -> Http2FrameConnection)
@@ -60,20 +61,6 @@ wrapConn True conn = conn {
           }
     }
 
-tlsSettings :: UseTlsOrNot -> HostName -> PortNumber -> Maybe ClientParams
-tlsSettings False _ _ = Nothing
-tlsSettings True host port = Just $ TLS.ClientParams {
-          TLS.clientWantSessionResume    = Nothing
-        , TLS.clientUseMaxFragmentLength = Nothing
-        , TLS.clientServerIdentification = (host, ByteString.pack $ show port)
-        , TLS.clientUseServerNameIndication = True
-        , TLS.clientShared               = def
-        , TLS.clientHooks                = def { TLS.onServerCertificate = \_ _ _ _ -> return []
-                                               }
-        , TLS.clientSupported            = def { TLS.supportedCiphers = TLS.ciphersuite_default }
-        , TLS.clientDebug                = def
-         }
-
 data Params = Params
   { _debugOrNot :: DebugOrNot
   , _tlsOrNot   :: UseTlsOrNot
@@ -85,7 +72,7 @@ data Params = Params
 
 runExample :: Params -> IO ()
 runExample params@(Params{..}) = do
-    let compress = if _gzipOrNot then gzip else uncompressed
+    let (encoding,decoding) = if _gzipOrNot then (Encoding gzip, Decoding gzip) else (Encoding uncompressed, Decoding uncompressed)
     putStrLn "~~~connecting~~~"
     conn <- newHttp2FrameConnection _host _port (tlsSettings _tlsOrNot _host _port)
     let goAwayHandler m = putStrLn "~~~goAway~~~" >> print m
@@ -100,7 +87,7 @@ runExample params@(Params{..}) = do
                      => RPC s m
                      -> MethodInput s m
                      -> IO (Either TooMuchConcurrency (RawReply (MethodOutput s m)))
-            unaryRPC x y = open x client _authority [] (Timeout 100) compress (singleRequest x compress y)
+            unaryRPC x y = open client _authority [] (Timeout 100) encoding decoding (singleRequest x y)
 
         printDone "unary-rpc-index" =<< unaryRPC (RPC :: RPC GRPCBin "index") (EmptyMessage def)
         printDone "unary-rpc-index" =<< unaryRPC (RPC :: RPC GRPCBin "empty") (EmptyMessage def)
@@ -113,28 +100,30 @@ runExample params@(Params{..}) = do
 
         let handleReply n _ x = print ("~~~"::String, n, showMessage x) >> pure (1+n)
         streamServerThread <- async $ do
-            printDone "stream-server" =<< open (RPC :: RPC GRPCBin "dummyServerStream") client
+            printDone "stream-server" =<< open client
                  _authority
                  []
                  (Timeout 1000)
-                 compress
-                 (streamReply (RPC :: RPC GRPCBin "dummyServerStream") compress (0::Int) def handleReply)
+                 encoding
+                 decoding
+                 (streamReply (RPC :: RPC GRPCBin "dummyServerStream") (0::Int) def handleReply)
 
         streamClientThread <- async $ do
-            printDone "stream-client" =<< open (RPC :: RPC GRPCBin "dummyClientStream") client
+            printDone "stream-client" =<< open client
                  _authority
                  []
                  (Timeout 1000)
-                 compress
+                 encoding
+                 decoding
                  (streamRequest (RPC :: RPC GRPCBin "dummyClientStream") (10::Int) $ \n -> do
                      threadDelay 300000
                      if n > 0
                      then do
                          print ("pushing" , n)
-                         return (compress, n - 1, Right def)
+                         return (n - 1, Right (Compressed, def))
                      else do
                          print ("stop pushing" , n)
-                         return (compress, n, Left StreamDone))
+                         return (n, Left StreamDone))
 
         wait streamServerThread
         wait streamClientThread
