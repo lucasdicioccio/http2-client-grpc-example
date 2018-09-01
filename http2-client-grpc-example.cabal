@@ -16,6 +16,7 @@ cabal-version:       >=1.10
 library
   hs-source-dirs:      src, gen
   exposed-modules:     Lib
+                     , SimpleLib
                      , Proto.Protos.Grpcbin
                      , Proto.Protos.Grpcbin_Fields
   build-depends:       base >= 4.7 && < 5
@@ -25,8 +26,9 @@ library
                      , data-default-class
                      , http2
                      , http2-client
-                     , http2-client-grpc >= 0.4
+                     , http2-client-grpc >= 0.5.0.0
                      , http2-grpc-types
+                     , lens
                      , proto-lens
                      , proto-lens-protoc
                      , tls
