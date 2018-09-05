@@ -17,13 +17,6 @@ mkClient host port tlsEnabled doCompress =
   where
     compression = if doCompress then gzip else uncompressed
 
--- Unpack an Unary output RawResult as a lens.
-unaryOutput
-  :: (Applicative f, Field3 a1 b1 (Either c1 a2) (Either c1 b2)) =>
-     (a2 -> f b2)
-     -> Either c2 (Either c3 a1) -> f (Either c2 (Either c3 b1))
-unaryOutput = _Right . _Right . _3 . _Right
-
 runSimpleExample host port tlsEnabled doCompress = do
   grpc <- mkClient host port tlsEnabled doCompress
   ret <- rawUnary (RPC :: RPC GRPCBin "dummyUnary") grpc (
