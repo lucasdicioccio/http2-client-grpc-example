@@ -128,4 +128,36 @@ runExample params@(Params{..}) = do
         wait streamServerThread
         wait streamClientThread
 
+        bidirStreamThread <- async $ do
+            let bidiloop :: Int -> IO (Int, BiDiStep GRPCBin "dummyBidirectionalStreamStream" Int )
+                bidiloop n = do
+                    print "bidi-loop"
+                    threadDelay 300000
+                    if n > 0
+                    then do
+                        if n `mod` 2 == 0
+                        then do
+                            print "bidi-loop-send"
+                            return (n - 1, SendInput Compressed def)
+                        else do
+                            print "bidi-loop-rcv"
+                            return $ (n, WaitOutput
+                                (\hdrs m msg -> do
+                                    print ("bidi-out", hdrs, m, msg)
+                                    return (m - 1))
+                                (\hdrs m trls -> do
+                                    print ("bidi-closed", m, trls)
+                                    return m))
+                    else do
+                        print ("stop bidiloop", n)
+                        return $ (n, Abort)
+            printDone "bidir-client" =<< open client
+                 _authority
+                 []
+                 (Timeout 1000)
+                 encoding
+                 decoding
+                 (steppedBiDiStream (RPC :: RPC GRPCBin "dummyBidirectionalStreamStream") (10::Int) bidiloop)
+
+        wait bidirStreamThread
         putStrLn "done"
