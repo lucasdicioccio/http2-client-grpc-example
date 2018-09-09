@@ -1,6 +1,7 @@
 {-# LANGUAGE DataKinds         #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards   #-}
+{-# LANGUAGE FlexibleContexts  #-}
 module Lib (
     runExample
   , Params(..)
@@ -160,4 +161,22 @@ runExample params@(Params{..}) = do
                  (steppedBiDiStream (RPC :: RPC GRPCBin "dummyBidirectionalStreamStream") (10::Int) bidiloop)
 
         wait bidirStreamThread
+
+        generalHandlerThread <- async $ do
+            let genLoopInput n ev = case ev of
+                    (Headers hdrs) -> print ("gen-bidir-hdrs", hdrs) >> pure n
+                    (RecvMessage msg) -> print ("gen-bidir-msg", msg) >> pure (n-1)
+                    (Trailers trls) -> print ("gen-bidir-trls", trls) >> pure 0
+                    (Invalid err) -> print ("gen-bidir-err", err) >> pure 0
+            let genLoopOutput 0 = print ("finalizing") >> pure (0, Finalize)
+                genLoopOutput n = print ("pushing", n) >> pure (n - 1, SendMessage Compressed def)
+            printDone "general-client" =<< open client
+                 _authority
+                 []
+                 (Timeout 1000)
+                 encoding
+                 decoding
+                 (generalHandler (RPC :: RPC GRPCBin "dummyBidirectionalStreamStream") (10::Int) genLoopInput (10::Int) genLoopOutput)
+
+        wait generalHandlerThread
         putStrLn "done"
