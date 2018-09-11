@@ -4,8 +4,10 @@
 
 module SimpleLib where
 
+import Control.Exception
 import Control.Lens
 import Data.Default.Class (def)
+import GHC.Int (Int32)
 
 import Network.GRPC.Client
 import Network.GRPC.Client.Helpers
@@ -19,6 +21,7 @@ mkClient host port tlsEnabled doCompress =
 
 runSimpleExample host port tlsEnabled doCompress = do
   grpc <- mkClient host port tlsEnabled doCompress
+  -- unary
   ret <- rawUnary (RPC :: RPC GRPCBin "dummyUnary") grpc (
       def
           & fInt32s .~ [1..10000]
@@ -27,4 +30,17 @@ runSimpleExample host port tlsEnabled doCompress = do
   let echoedStrings = ret ^? unaryOutput . fStrings
   let echoedInt32sLen = ret ^? unaryOutput . fInt32s . to length
   print (echoedStrings, echoedInt32sLen)
-  return ret
+  print ret
+
+  -- general handler
+  let handleIn :: Char -> IncomingEvent GRPCBin "dummyBidirectionalStreamStream" Char -> IO Char
+      handleIn c (Headers hdrs) = print (c, "headers", hdrs) >> pure (succ c)
+      handleIn c (Trailers trls) = print (c, "trailers", trls) >> pure (succ c)
+      handleIn c (RecvMessage msg) = print (c, msg ^. fStrings, msg ^. fInt32) >> pure (succ c)
+      handleIn c (Invalid err) = throwIO err
+
+  let nextOut :: Int32 -> IO (Int32, OutgoingEvent GRPCBin "dummyBidirectionalStreamStream" Int32)
+      nextOut 0 = pure(0, Finalize)
+      nextOut n = pure(n - 1, SendMessage Uncompressed $ def & fStrings .~ ["hello", "world"] & fInt32 .~ n)
+  ret <- rawGeneralStream (RPC :: RPC GRPCBin "dummyBidirectionalStreamStream") grpc 'a' handleIn 30 nextOut 
+  print ret
