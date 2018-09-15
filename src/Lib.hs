@@ -15,11 +15,12 @@ module Lib (
 import Control.Concurrent.Async (async, wait)
 import Control.Concurrent.Chan (newChan, writeChan, readChan)
 import Control.Concurrent (threadDelay)
+import Control.Lens
 import Control.Monad (forever, replicateM_, when)
 import qualified Data.ByteString.Char8 as ByteString
-import Data.Default.Class (def)
 import Data.Either (isRight)
 import Data.ProtoLens.TextFormat (showMessage)
+import Data.ProtoLens.Message (defMessage)
 
 import Data.ProtoLens.Service.Types (Service(..), HasMethod, HasMethodImpl(..))
 
@@ -32,6 +33,7 @@ import qualified Network.TLS as TLS
 import qualified Network.TLS.Extra.Cipher as TLS
 
 import Proto.Protos.Grpcbin
+import Proto.Protos.Grpcbin_Fields
 
 printDone :: Show a => String -> a -> IO ()
 printDone h v = print ("Done " ++ h ++ ": " ++ show v)
@@ -90,14 +92,14 @@ runExample params@(Params{..}) = do
                      -> IO (Either TooMuchConcurrency (RawReply (MethodOutput s m)))
             unaryRPC x y = open client _authority [] (Timeout 100) encoding decoding (singleRequest x y)
 
-        printDone "unary-rpc-index" =<< unaryRPC (RPC :: RPC GRPCBin "index") (EmptyMessage def)
-        printDone "unary-rpc-index" =<< unaryRPC (RPC :: RPC GRPCBin "empty") (EmptyMessage def)
-        printDone "unary-rpc-err-0" =<< unaryRPC (RPC :: RPC GRPCBin "specificError") (SpecificErrorRequest 0 "kikoo" def)
-        printDone "unary-rpc-err-1" =<< unaryRPC (RPC :: RPC GRPCBin "specificError") (SpecificErrorRequest 1 "kikoo" def)
-        printDone "unary-rpc-err-1" =<< unaryRPC (RPC :: RPC GRPCBin "specificError") (SpecificErrorRequest 1 "kikoo" def)
+        printDone "unary-rpc-index" =<< unaryRPC (RPC :: RPC GRPCBin "index") defMessage
+        printDone "unary-rpc-index" =<< unaryRPC (RPC :: RPC GRPCBin "empty") defMessage
+        printDone "unary-rpc-err-0" =<< unaryRPC (RPC :: RPC GRPCBin "specificError") (defMessage & code .~ 0 & reason .~ "kikoo")
+        printDone "unary-rpc-err-0" =<< unaryRPC (RPC :: RPC GRPCBin "specificError") (defMessage & code .~ 1 & reason .~ "kikoo")
+        printDone "unary-rpc-err-0" =<< unaryRPC (RPC :: RPC GRPCBin "specificError") (defMessage & code .~ 1 & reason .~ "kikoo")
 
         replicateM_ 50 $ do
-            printDone "unary-rpc-err-random" =<< unaryRPC (RPC :: RPC GRPCBin "randomError") (EmptyMessage def)
+            printDone "unary-rpc-err-random" =<< unaryRPC (RPC :: RPC GRPCBin "randomError") defMessage
 
         let handleReply n _ x = print ("~~~"::String, n, showMessage x) >> pure (1+n)
         streamServerThread <- async $ do
@@ -107,7 +109,7 @@ runExample params@(Params{..}) = do
                  (Timeout 1000)
                  encoding
                  decoding
-                 (streamReply (RPC :: RPC GRPCBin "dummyServerStream") (0::Int) def handleReply)
+                 (streamReply (RPC :: RPC GRPCBin "dummyServerStream") (0::Int) defMessage handleReply)
 
         streamClientThread <- async $ do
             printDone "stream-client" =<< open client
@@ -121,7 +123,7 @@ runExample params@(Params{..}) = do
                      if n > 0
                      then do
                          print ("pushing" , n)
-                         return (n - 1, Right (Compressed, def))
+                         return (n - 1, Right (Compressed, defMessage))
                      else do
                          print ("stop pushing" , n)
                          return (n, Left StreamDone))
@@ -139,7 +141,7 @@ runExample params@(Params{..}) = do
                         if n `mod` 2 == 0
                         then do
                             print "bidi-loop-send"
-                            return (n - 1, SendInput Compressed def)
+                            return (n - 1, SendInput Compressed defMessage)
                         else do
                             print "bidi-loop-rcv"
                             return $ (n, WaitOutput
@@ -169,7 +171,7 @@ runExample params@(Params{..}) = do
                     (Trailers trls) -> print ("gen-bidir-trls", trls) >> pure 0
                     (Invalid err) -> print ("gen-bidir-err", err) >> pure 0
             let genLoopOutput 0 = print ("finalizing") >> pure (0, Finalize)
-                genLoopOutput n = print ("pushing", n) >> pure (n - 1, SendMessage Compressed def)
+                genLoopOutput n = print ("pushing", n) >> pure (n - 1, SendMessage Compressed defMessage)
             printDone "general-client" =<< open client
                  _authority
                  []

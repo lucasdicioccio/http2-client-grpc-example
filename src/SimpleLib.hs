@@ -6,7 +6,7 @@ module SimpleLib where
 
 import Control.Exception
 import Control.Lens
-import Data.Default.Class (def)
+import Data.ProtoLens.Message (defMessage)
 import GHC.Int (Int32)
 
 import Network.GRPC.Client
@@ -23,7 +23,7 @@ runSimpleExample host port tlsEnabled doCompress = do
   grpc <- mkClient host port tlsEnabled doCompress
   -- unary
   ret <- rawUnary (RPC :: RPC GRPCBin "dummyUnary") grpc (
-      def
+      defMessage
           & fInt32s .~ [1..10000]
           & fStrings .~ ["hello", "world"]
     )
@@ -41,6 +41,6 @@ runSimpleExample host port tlsEnabled doCompress = do
 
   let nextOut :: Int32 -> IO (Int32, OutgoingEvent GRPCBin "dummyBidirectionalStreamStream" Int32)
       nextOut 0 = pure(0, Finalize)
-      nextOut n = pure(n - 1, SendMessage Uncompressed $ def & fStrings .~ ["hello", "world"] & fInt32 .~ n)
+      nextOut n = pure(n - 1, SendMessage Uncompressed $ defMessage & fStrings .~ ["hello", "world"] & fInt32 .~ n)
   ret <- rawGeneralStream (RPC :: RPC GRPCBin "dummyBidirectionalStreamStream") grpc 'a' handleIn 30 nextOut 
   print ret
