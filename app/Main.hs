@@ -54,4 +54,4 @@ main = execParser opts >>= go
       ])
     go args
       | _argSimple args = void $ runSimpleExample (_arghost args) (_argport args) (_arguseTLS args) (_arggzip args)
-      | otherwise = runExample $ args2params args
+      | otherwise = void $ runExample $ args2params args

@@ -6,7 +6,7 @@ mkdir -p protos
 
 curl 'https://raw.githubusercontent.com/moul/pb/master/grpcbin/grpcbin.proto' > protos/grpcbin.proto
 
-stack install --local-bin-path=gen-bin proto-lens-protoc
+STACK_YAML=stack-dev.yaml stack install --local-bin-path=gen-bin proto-lens-protoc
 
 protolens="`pwd`/gen-bin/proto-lens-protoc"
 

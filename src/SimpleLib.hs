@@ -6,9 +6,11 @@ module SimpleLib where
 
 import Control.Exception
 import Control.Lens
+import Control.Monad.IO.Class (liftIO)
 import Data.ProtoLens.Message (defMessage)
 import GHC.Int (Int32)
 
+import Network.HTTP2.Client
 import Network.GRPC.Client
 import Network.GRPC.Client.Helpers
 import Proto.Protos.Grpcbin
@@ -19,7 +21,7 @@ mkClient host port tlsEnabled doCompress =
   where
     compression = if doCompress then gzip else uncompressed
 
-runSimpleExample host port tlsEnabled doCompress = do
+runSimpleExample host port tlsEnabled doCompress = runClientIO $ do
   grpc <- mkClient host port tlsEnabled doCompress
   -- unary
   ret <- rawUnary (RPC :: RPC GRPCBin "dummyUnary") grpc (
@@ -29,18 +31,22 @@ runSimpleExample host port tlsEnabled doCompress = do
     )
   let echoedStrings = ret ^? unaryOutput . fStrings
   let echoedInt32sLen = ret ^? unaryOutput . fInt32s . to length
-  print (echoedStrings, echoedInt32sLen)
-  print ret
+  printIO (echoedStrings, echoedInt32sLen)
+  printIO ret
 
   -- general handler
-  let handleIn :: Char -> IncomingEvent GRPCBin "dummyBidirectionalStreamStream" Char -> IO Char
-      handleIn c (Headers hdrs) = print (c, "headers", hdrs) >> pure (succ c)
-      handleIn c (Trailers trls) = print (c, "trailers", trls) >> pure (succ c)
-      handleIn c (RecvMessage msg) = print (c, msg ^. fStrings, msg ^. fInt32) >> pure (succ c)
-      handleIn c (Invalid err) = throwIO err
+  let handleIn :: Char -> IncomingEvent GRPCBin "dummyBidirectionalStreamStream" Char -> ClientIO Char
+      handleIn c (Headers hdrs) = printIO (c, "headers", hdrs) >> pure (succ c)
+      handleIn c (Trailers trls) = printIO (c, "trailers", trls) >> pure (succ c)
+      handleIn c (RecvMessage msg) = printIO (c, msg ^. fStrings, msg ^. fInt32) >> pure (succ c)
+      handleIn c (Invalid err) = liftIO $ throwIO err
 
-  let nextOut :: Int32 -> IO (Int32, OutgoingEvent GRPCBin "dummyBidirectionalStreamStream" Int32)
+  let nextOut :: Int32 -> ClientIO (Int32, OutgoingEvent GRPCBin "dummyBidirectionalStreamStream" Int32)
       nextOut 0 = pure(0, Finalize)
       nextOut n = pure(n - 1, SendMessage Uncompressed $ defMessage & fStrings .~ ["hello", "world"] & fInt32 .~ n)
   ret <- rawGeneralStream (RPC :: RPC GRPCBin "dummyBidirectionalStreamStream") grpc 'a' handleIn 30 nextOut 
-  print ret
+  printIO ret
+
+  where
+    printIO :: Show a => a -> ClientIO ()
+    printIO = liftIO . print

@@ -12,11 +12,12 @@ module Lib (
   , PortNumber
   ) where
 
-import Control.Concurrent.Async (async, wait)
+import Control.Concurrent.Async.Lifted (async, wait)
 import Control.Concurrent.Chan (newChan, writeChan, readChan)
-import Control.Concurrent (threadDelay)
+import Control.Concurrent.Lifted (threadDelay)
 import Control.Lens
 import Control.Monad (forever, replicateM_, when)
+import Control.Monad.IO.Class (MonadIO, liftIO)
 import qualified Data.ByteString.Char8 as ByteString
 import Data.Either (isRight)
 import Data.ProtoLens.TextFormat (showMessage)
@@ -35,8 +36,14 @@ import qualified Network.TLS.Extra.Cipher as TLS
 import Proto.Protos.Grpcbin
 import Proto.Protos.Grpcbin_Fields
 
-printDone :: Show a => String -> a -> IO ()
-printDone h v = print ("Done " ++ h ++ ": " ++ show v)
+printDone :: Show a => String -> a -> ClientIO ()
+printDone h v = printIO ("Done " ++ h ++ ": " ++ show v)
+
+printIO :: (MonadIO m, Show a) => a -> m ()
+printIO = liftIO . print
+
+putStrLnIO :: MonadIO m => String -> m ()
+putStrLnIO = liftIO . putStrLn
 
 type DebugOrNot = Bool
 type CompressOrNot = Bool
@@ -49,7 +56,7 @@ wrapConn True conn = conn {
           in frameClient {
                  _sendFrames = \mkFrames -> do
                      xs <- mkFrames
-                     print $ (">>> "::String, _getStreamId frameClient, map snd xs)
+                     printIO $ (">>> "::String, _getStreamId frameClient, map snd xs)
                      _sendFrames frameClient (pure xs)
              }
     , _serverStream =
@@ -59,7 +66,7 @@ wrapConn True conn = conn {
           currentServerStrean {
             _nextHeaderAndFrame = do
                 hdrFrame@(hdr,_) <- _nextHeaderAndFrame currentServerStrean
-                print ("<<< "::String, HTTP2.streamId hdr, hdrFrame)
+                printIO ("<<< "::String, HTTP2.streamId hdr, hdrFrame)
                 return hdrFrame
           }
     }
@@ -73,23 +80,23 @@ data Params = Params
   , _authority  :: ByteString.ByteString
   } deriving Show
 
-runExample :: Params -> IO ()
-runExample params@(Params{..}) = do
+runExample :: Params -> IO (Either ClientError ())
+runExample params@(Params{..}) = runClientIO $ do
     let (encoding,decoding) = if _gzipOrNot then (Encoding gzip, Decoding gzip) else (Encoding uncompressed, Decoding uncompressed)
-    putStrLn "~~~connecting~~~"
+    putStrLnIO "~~~connecting~~~"
     conn <- newHttp2FrameConnection _host _port (tlsSettings _tlsOrNot _host _port)
-    let goAwayHandler m = putStrLn "~~~goAway~~~" >> print m
+    let goAwayHandler m = putStrLnIO "~~~goAway~~~" >> printIO m
     runHttp2Client (wrapConn _debugOrNot conn) 8192 8192 [] goAwayHandler ignoreFallbackHandler $ \client -> do
-        putStrLn "~~~connected~~~"
+        putStrLnIO "~~~connected~~~"
         let ifc = _incomingFlowControl client
         let ofc = _outgoingFlowControl client
-        _addCredit ifc 10000000
+        liftIO $ _addCredit ifc 10000000
         _ <- _updateWindow ifc
 
         let unaryRPC :: (Service s, HasMethod s m)
                      => RPC s m
                      -> MethodInput s m
-                     -> IO (Either TooMuchConcurrency (RawReply (MethodOutput s m)))
+                     -> ClientIO (Either TooMuchConcurrency (RawReply (MethodOutput s m)))
             unaryRPC x y = open client _authority [] (Timeout 100) encoding decoding (singleRequest x y)
 
         printDone "unary-rpc-index" =<< unaryRPC (RPC :: RPC GRPCBin "index") defMessage
@@ -101,7 +108,7 @@ runExample params@(Params{..}) = do
         replicateM_ 50 $ do
             printDone "unary-rpc-err-random" =<< unaryRPC (RPC :: RPC GRPCBin "randomError") defMessage
 
-        let handleReply n _ x = print ("~~~"::String, n, showMessage x) >> pure (1+n)
+        let handleReply n _ x = printIO ("~~~"::String, n, showMessage x) >> pure (1+n)
         streamServerThread <- async $ do
             printDone "stream-server" =<< open client
                  _authority
@@ -122,37 +129,37 @@ runExample params@(Params{..}) = do
                      threadDelay 300000
                      if n > 0
                      then do
-                         print ("pushing" , n)
+                         printIO ("pushing" , n)
                          return (n - 1, Right (Compressed, defMessage))
                      else do
-                         print ("stop pushing" , n)
+                         printIO ("stop pushing" , n)
                          return (n, Left StreamDone))
 
         wait streamServerThread
         wait streamClientThread
 
         bidirStreamThread <- async $ do
-            let bidiloop :: Int -> IO (Int, BiDiStep GRPCBin "dummyBidirectionalStreamStream" Int )
+            let bidiloop :: Int -> ClientIO (Int, BiDiStep GRPCBin "dummyBidirectionalStreamStream" Int )
                 bidiloop n = do
-                    print "bidi-loop"
+                    printIO "bidi-loop"
                     threadDelay 300000
                     if n > 0
                     then do
                         if n `mod` 2 == 0
                         then do
-                            print "bidi-loop-send"
+                            printIO "bidi-loop-send"
                             return (n - 1, SendInput Compressed defMessage)
                         else do
-                            print "bidi-loop-rcv"
+                            printIO "bidi-loop-rcv"
                             return $ (n, WaitOutput
                                 (\hdrs m msg -> do
-                                    print ("bidi-out", hdrs, m, msg)
+                                    printIO ("bidi-out", hdrs, m, msg)
                                     return (m - 1))
                                 (\hdrs m trls -> do
-                                    print ("bidi-closed", m, trls)
+                                    printIO ("bidi-closed", m, trls)
                                     return m))
                     else do
-                        print ("stop bidiloop", n)
+                        printIO ("stop bidiloop", n)
                         return $ (n, Abort)
             printDone "bidir-client" =<< open client
                  _authority
@@ -166,12 +173,12 @@ runExample params@(Params{..}) = do
 
         generalHandlerThread <- async $ do
             let genLoopInput n ev = case ev of
-                    (Headers hdrs) -> print ("gen-bidir-hdrs", hdrs) >> pure n
-                    (RecvMessage msg) -> print ("gen-bidir-msg", msg) >> pure (n-1)
-                    (Trailers trls) -> print ("gen-bidir-trls", trls) >> pure 0
-                    (Invalid err) -> print ("gen-bidir-err", err) >> pure 0
-            let genLoopOutput 0 = print ("finalizing") >> pure (0, Finalize)
-                genLoopOutput n = print ("pushing", n) >> pure (n - 1, SendMessage Compressed defMessage)
+                    (Headers hdrs) -> printIO ("gen-bidir-hdrs", hdrs) >> pure n
+                    (RecvMessage msg) -> printIO ("gen-bidir-msg", msg) >> pure (n-1)
+                    (Trailers trls) -> printIO ("gen-bidir-trls", trls) >> pure 0
+                    (Invalid err) -> printIO ("gen-bidir-err", err) >> pure 0
+            let genLoopOutput 0 = printIO ("finalizing") >> pure (0, Finalize)
+                genLoopOutput n = printIO ("pushing", n) >> pure (n - 1, SendMessage Compressed defMessage)
             printDone "general-client" =<< open client
                  _authority
                  []
@@ -181,4 +188,4 @@ runExample params@(Params{..}) = do
                  (generalHandler (RPC :: RPC GRPCBin "dummyBidirectionalStreamStream") (10::Int) genLoopInput (10::Int) genLoopOutput)
 
         wait generalHandlerThread
-        putStrLn "done"
+        putStrLnIO "done"

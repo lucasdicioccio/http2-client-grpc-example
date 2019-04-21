@@ -1,5 +1,5 @@
 name:                http2-client-grpc-example
-version:             0.1.0.0
+version:             0.2.0.0
 -- synopsis:
 -- description:
 homepage:            https://github.com/lucasdicioccio/http2-client-grpc-example#readme
@@ -25,12 +25,16 @@ library
                      , containers
                      , http2
                      , http2-client
-                     , http2-client-grpc >= 0.5.0.3
+                     , http2-client-grpc >= 0.7.0.0
                      , http2-grpc-types
                      , lens
+                     , lifted-async
+                     , lifted-base
                      , proto-lens >= 0.4
                      , proto-lens-runtime >= 0.4.0.1
                      , tls
+                     , process
+                     , process-extras
   default-language:    Haskell2010
 
 executable http2-client-grpc-example-exe
