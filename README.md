@@ -1,3 +1,9 @@
+# THIS REPO IS MOVING
+
+NOTE: we'll be moving the code in this repository to https://github.com/haskell-grpc-native .
+
+
+
 # http2-client-grpc-example
 
 This is an example gRPC client for `http2-client-grpc` using the low-level
