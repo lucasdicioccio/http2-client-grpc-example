@@ -1,0 +1,11 @@
+packages: .
+
+allow-newer:
+ , http2-client-grpc:bytestring
+ , http2-client-grpc:http2-client
+ , http2-client-grpc:text
+ , http2-grpc-proto-lens:bytestring
+ , http2-grpc-proto-lens:proto-lens
+ , http2-grpc-types:bytestring
+ , proto-lens-runtime:bytestring
+ , proto-lens:bytestring
