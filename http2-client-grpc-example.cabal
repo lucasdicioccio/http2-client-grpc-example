@@ -26,6 +26,7 @@ library
                      , http2
                      , http2-client
                      , http2-client-grpc >= 0.7.0.0
+                     , http2-grpc-proto-lens
                      , http2-grpc-types
                      , lens
                      , lifted-async
