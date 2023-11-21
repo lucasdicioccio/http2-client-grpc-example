@@ -28,6 +28,7 @@ import Data.ProtoLens.Service.Types (Service(..), HasMethod, HasMethodImpl(..))
 import Network.GRPC.Client
 import Network.GRPC.Client.Helpers
 import Network.GRPC.HTTP2.Encoding
+import Network.GRPC.HTTP2.ProtoLens (RPC (..))
 import Network.HTTP2.Client
 import qualified Network.HTTP2 as HTTP2
 import qualified Network.TLS as TLS
@@ -139,7 +140,7 @@ runExample params@(Params{..}) = runClientIO $ do
         wait streamClientThread
 
         bidirStreamThread <- async $ do
-            let bidiloop :: Int -> ClientIO (Int, BiDiStep GRPCBin "dummyBidirectionalStreamStream" Int )
+            let bidiloop :: Int -> ClientIO (Int, BiDiStep DummyMessage DummyMessage Int )
                 bidiloop n = do
                     printIO "bidi-loop"
                     threadDelay 300000
